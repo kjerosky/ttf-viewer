@@ -8,7 +8,8 @@ LIBRARY_PATHS = -L /opt/homebrew/lib
 LIBRARIES = -lSDL3
 
 SOURCE_FILES = \
-	main.cpp
+	main.cpp \
+	Font.cpp
 
 $(EXECUTABLE):
 	$(CC) $(FLAGS) -o $(EXECUTABLE) $(SOURCE_FILES) $(INCLUDE_PATHS) $(LIBRARY_PATHS) $(LIBRARIES)
