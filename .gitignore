@@ -1,0 +1,6 @@
+ttf-viewer
+
+*.dSYM
+.vscode
+
+test-fonts
