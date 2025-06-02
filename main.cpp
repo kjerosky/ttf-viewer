@@ -171,17 +171,206 @@ void draw_glyph_lines(SDL_Renderer* renderer, const Glyph& glyph, int window_wid
 
 // --------------------------------------------------------------------------
 
-void draw_glyph_contours(SDL_Renderer* renderer, const Glyph& glyph, int window_width, int window_height, int padding) {
-    //todo - for now, show a red X to indicate no implementation
+int wrap(int value, int min, int max) {
+    if (value < min) {
+        int delta = value - min;
+        return max + delta + 1;
+    } else if (value > max) {
+        int delta = value - max;
+        return min + delta - 1;
+    } else {
+        return value;
+    }
+}
 
-    Uint8 r, g, b, a;
-    SDL_GetRenderDrawColor(renderer, &r, &g, &b, &a);
+// --------------------------------------------------------------------------
 
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-    SDL_RenderLine(renderer, 0, 0, window_width - 1, window_height - 1);
-    SDL_RenderLine(renderer, 0, window_height - 1, window_width - 1, 0);
+void draw_direct_line(SDL_Renderer* renderer, const Glyph& glyph, const SDL_FRect& glyph_render_bounds, const GlyphPoint& p1, const GlyphPoint& p2) {
+    float mapped_x1 = linear_remap(
+        p1.x,
+        glyph.min_extents.x,
+        glyph.max_extents.x,
+        glyph_render_bounds.x,
+        glyph_render_bounds.x + glyph_render_bounds.w - 1
+    );
+    float mapped_y1 = linear_remap(
+        p1.y,
+        glyph.max_extents.y,
+        glyph.min_extents.y,
+        glyph_render_bounds.y,
+        glyph_render_bounds.y + glyph_render_bounds.h - 1
+    );
 
-    SDL_SetRenderDrawColor(renderer, r, g, b, a);
+    float mapped_x2 = linear_remap(
+        p2.x,
+        glyph.min_extents.x,
+        glyph.max_extents.x,
+        glyph_render_bounds.x,
+        glyph_render_bounds.x + glyph_render_bounds.w - 1
+    );
+    float mapped_y2 = linear_remap(
+        p2.y,
+        glyph.max_extents.y,
+        glyph.min_extents.y,
+        glyph_render_bounds.y,
+        glyph_render_bounds.y + glyph_render_bounds.h - 1
+    );
+
+    SDL_RenderLine(renderer, mapped_x1, mapped_y1, mapped_x2, mapped_y2);
+}
+
+// --------------------------------------------------------------------------
+
+float lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+
+// --------------------------------------------------------------------------
+
+void lerp_points(float x1, float y1, float x2, float y2, float t, SDL_FPoint& interpolated_point) {
+    interpolated_point.x = lerp(x1, x2, t);
+    interpolated_point.y = lerp(y1, y2, t);
+}
+
+// --------------------------------------------------------------------------
+
+void draw_quadratic_bezier_curve(SDL_Renderer* renderer, const Glyph& glyph, const SDL_FRect& glyph_render_bounds, const GlyphPoint& p1, const GlyphPoint& p2, const GlyphPoint& p3, int subdivisions) {
+    float mapped_x1 = linear_remap(
+        p1.x,
+        glyph.min_extents.x,
+        glyph.max_extents.x,
+        glyph_render_bounds.x,
+        glyph_render_bounds.x + glyph_render_bounds.w - 1
+    );
+    float mapped_y1 = linear_remap(
+        p1.y,
+        glyph.max_extents.y,
+        glyph.min_extents.y,
+        glyph_render_bounds.y,
+        glyph_render_bounds.y + glyph_render_bounds.h - 1
+    );
+
+    float mapped_x2 = linear_remap(
+        p2.x,
+        glyph.min_extents.x,
+        glyph.max_extents.x,
+        glyph_render_bounds.x,
+        glyph_render_bounds.x + glyph_render_bounds.w - 1
+    );
+    float mapped_y2 = linear_remap(
+        p2.y,
+        glyph.max_extents.y,
+        glyph.min_extents.y,
+        glyph_render_bounds.y,
+        glyph_render_bounds.y + glyph_render_bounds.h - 1
+    );
+
+    float mapped_x3 = linear_remap(
+        p3.x,
+        glyph.min_extents.x,
+        glyph.max_extents.x,
+        glyph_render_bounds.x,
+        glyph_render_bounds.x + glyph_render_bounds.w - 1
+    );
+    float mapped_y3 = linear_remap(
+        p3.y,
+        glyph.max_extents.y,
+        glyph.min_extents.y,
+        glyph_render_bounds.y,
+        glyph_render_bounds.y + glyph_render_bounds.h - 1
+    );
+
+    float increment = 1.0f / subdivisions;
+    for (float t = 0.0f; t < 1.0f; t += increment) {
+        SDL_FPoint p_1_to_2;
+        SDL_FPoint p_2_to_3;
+
+        lerp_points(mapped_x1, mapped_y1, mapped_x2, mapped_y2, t, p_1_to_2);
+        lerp_points(mapped_x2, mapped_y2, mapped_x3, mapped_y3, t, p_2_to_3);
+
+        SDL_FPoint current_curve_point;
+        lerp_points(p_1_to_2.x, p_1_to_2.y, p_2_to_3.x, p_2_to_3.y, t, current_curve_point);
+
+        float next_t = t + increment;
+        if (next_t > 1.0f) {
+            next_t = 1.0f;
+        }
+
+        lerp_points(mapped_x1, mapped_y1, mapped_x2, mapped_y2, next_t, p_1_to_2);
+        lerp_points(mapped_x2, mapped_y2, mapped_x3, mapped_y3, next_t, p_2_to_3);
+
+        SDL_FPoint next_curve_point;
+        lerp_points(p_1_to_2.x, p_1_to_2.y, p_2_to_3.x, p_2_to_3.y, next_t, next_curve_point);
+
+        SDL_RenderLine(renderer, current_curve_point.x, current_curve_point.y, next_curve_point.x, next_curve_point.y);
+    }
+}
+
+// --------------------------------------------------------------------------
+
+void draw_glyph_contours(SDL_Renderer* renderer, const Glyph& glyph, int window_width, int window_height, int padding, int subdivisions) {
+    SDL_FRect glyph_render_bounds;
+    calculate_glyph_render_bounds(glyph, window_width, window_height, padding, glyph_render_bounds);
+
+    int lower_index = 0;
+    for (int endpoint_index = 0; endpoint_index < glyph.num_end_point_indices; endpoint_index++) {
+        int upper_index = glyph.end_point_indices[endpoint_index];
+
+        for (int i = lower_index; i <= upper_index; i++) {
+            int first_index = -1;
+            int second_index = -1;
+            int third_index = -1;
+
+            GlyphPoint current_point = glyph.points[i];
+            if (current_point.is_on_curve) {
+                first_index = i;
+                second_index = wrap(i + 1, lower_index, upper_index);
+                third_index = wrap(i + 2, lower_index, upper_index);
+            } else {
+                first_index = wrap(i - 1, lower_index, upper_index);
+                second_index = i;
+                third_index = wrap(i + 1, lower_index, upper_index);
+            }
+
+            GlyphPoint first_point = glyph.points[first_index];
+            GlyphPoint second_point = glyph.points[second_index];
+            GlyphPoint third_point = glyph.points[third_index];
+
+            if (current_point.is_on_curve) {
+                if (second_point.is_on_curve) {
+                    draw_direct_line(renderer, glyph, glyph_render_bounds, first_point, second_point);
+                } else {
+                    if (third_point.is_on_curve) {
+                        draw_quadratic_bezier_curve(renderer, glyph, glyph_render_bounds, first_point, second_point, third_point, subdivisions);
+                    } else {
+                        GlyphPoint mid_point;
+                        mid_point.is_on_curve = true;
+                        mid_point.x = (second_point.x + third_point.x) / 2.0f;
+                        mid_point.y = (second_point.y + third_point.y) / 2.0f;
+
+                        draw_quadratic_bezier_curve(renderer, glyph, glyph_render_bounds, first_point, second_point, mid_point, subdivisions);
+                    }
+                }
+            } else {
+                if (!first_point.is_on_curve) {
+                    first_point.is_on_curve = true;
+                    first_point.x = (first_point.x + second_point.x) / 2.0f;
+                    first_point.y = (first_point.y + second_point.y) / 2.0f;
+                }
+
+                if (!third_point.is_on_curve) {
+                    third_point.is_on_curve = true;
+                    third_point.x = (second_point.x + third_point.x) / 2.0f;
+                    third_point.y = (second_point.y + third_point.y) / 2.0f;
+                }
+
+                // draw bezier first => second => third
+                draw_quadratic_bezier_curve(renderer, glyph, glyph_render_bounds, first_point, second_point, third_point, subdivisions);
+            }
+        }
+
+        lower_index = upper_index + 1;
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -250,7 +439,6 @@ int main(int argc, char** argv) {
 
     Uint16 current_glyph_index = 0;
     Glyph current_glyph = font.get_glyph(current_glyph_index);
-    print_glyph_information(current_glyph, current_glyph_index);
 
     bool is_running = true;
     while (is_running) {
@@ -298,7 +486,6 @@ int main(int argc, char** argv) {
             current_glyph.destroy();
             current_glyph = font.get_glyph(current_glyph_index);
 
-            print_glyph_information(current_glyph, current_glyph_index);
         }
 
         previous_was_left_arrow_pressed = current_was_left_arrow_pressed;
@@ -314,7 +501,7 @@ int main(int argc, char** argv) {
         } else if (draw_method == DrawMethod::LINES) {
             draw_glyph_lines(renderer, current_glyph, window_width, window_height, 20);
         } else if (draw_method == DrawMethod::CONTOURS) {
-            draw_glyph_contours(renderer, current_glyph, window_width, window_height, 20);
+            draw_glyph_contours(renderer, current_glyph, window_width, window_height, 20, 10);
         }
 
         SDL_RenderPresent(renderer);
