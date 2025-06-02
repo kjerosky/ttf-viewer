@@ -3,7 +3,35 @@
 
 #include <SDL3/SDL.h>
 #include <string>
-#include <fstream>
+#include <vector>
+#include <map>
+
+struct Coordinate {
+    Sint16 x;
+    Sint16 y;
+};
+
+struct GlyphPoint {
+    Sint16 x;
+    Sint16 y;
+    bool is_on_curve;
+};
+
+struct Glyph {
+    Coordinate min_extents;
+    Coordinate max_extents;
+    Uint16 num_end_point_indices;
+    Uint32* end_point_indices;
+    Uint16 num_points;
+    GlyphPoint* points;
+
+    void destroy() {
+        delete[] end_point_indices;
+        delete[] points;
+    }
+};
+
+// --------------------------------------------------------------------------
 
 class Font {
 
@@ -11,6 +39,8 @@ public:
 
     Font(const std::string& font_file_name);
     ~Font();
+
+    Glyph get_glyph();
 
 private:
 
@@ -29,9 +59,12 @@ private:
         Uint16 range_shift;
     };
 
+    std::vector<Uint8> font_file_contents;
+    std::map<std::string, Uint32> table_name_to_offset;
+
     void initialize(const std::string& font_file_name);
-    Uint32 read_uint32_from_big_endian_file(const std::vector<Uint8> file, int location);
-    Uint16 read_uint16_from_big_endian_file(const std::vector<Uint8> file, int location);
+    Uint32 read_uint32_from_big_endian_file(const std::vector<Uint8> file_contents, int location);
+    Uint16 read_uint16_from_big_endian_file(const std::vector<Uint8> file_contents, int location);
     void print_table_metadata(const Offset_subtable& offset_subtable, const Table* tables);
 };
 
