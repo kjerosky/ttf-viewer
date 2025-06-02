@@ -10,7 +10,7 @@ Font::Font(const std::string& font_file_name) {
 // --------------------------------------------------------------------------
 
 Font::~Font() {
-    // nothing to do for now
+    delete[] glyph_offsets;
 }
 
 // --------------------------------------------------------------------------
@@ -81,22 +81,41 @@ void Font::initialize(const std::string& font_file_name) {
     std::cout << "--------------------------------------------------------------------------" << std::endl;
 
     Uint32 maxp_offset = table_name_to_offset["maxp"];
-    Uint16 num_glyphs = read_uint16_from_big_endian_file(font_file_contents, maxp_offset + 4);
-    std::cout << "Number of glyphs: " << num_glyphs << std::endl;
+    glyph_count = read_uint16_from_big_endian_file(font_file_contents, maxp_offset + 4);
+    std::cout << "Number of glyphs: " << glyph_count << std::endl;
 
+    Uint32 head_offset = table_name_to_offset["head"];
+    Sint16 index_to_loc_format = read_uint16_from_big_endian_file(font_file_contents, head_offset + 50);
+    bool are_offsets_short = index_to_loc_format == 0;
+    Uint32 loca_offset_stride = are_offsets_short ? 2 : 4;
+
+    Uint32 loca_table_offset = table_name_to_offset["loca"];
+    glyph_offsets = new Uint32[glyph_count];
+    for (Uint32 glyph_index = 0; glyph_index < glyph_count; glyph_index++) {
+        Uint32 glyph_offset_file_location = loca_table_offset + loca_offset_stride * glyph_index;
+        if (are_offsets_short) {
+            glyph_offsets[glyph_index] = static_cast<Uint32>(read_uint16_from_big_endian_file(font_file_contents, glyph_offset_file_location) * 2);
+        } else {
+            glyph_offsets[glyph_index] = read_uint32_from_big_endian_file(font_file_contents, glyph_offset_file_location);
+        }
+    }
 
     delete[] tables;
 }
 
 // --------------------------------------------------------------------------
 
-Glyph Font::get_glyph() {
-    // For now, let's just read glyph 0 data.
+Uint16 Font::get_glyph_count() {
+    return glyph_count;
+}
 
+// --------------------------------------------------------------------------
+
+Glyph Font::get_glyph(Uint16 glyph_index) {
     Glyph glyph;
 
-    Uint32 glyf_offset = table_name_to_offset["glyf"];
-    Uint32 file_location = glyf_offset;
+    Uint32 glyf_table_offset = table_name_to_offset["glyf"];
+    Uint32 file_location = glyf_table_offset + glyph_offsets[glyph_index];
 
     Sint16 num_contours = static_cast<Sint16>(read_uint16_from_big_endian_file(font_file_contents, file_location));
     file_location += 2;

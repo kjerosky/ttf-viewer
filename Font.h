@@ -40,7 +40,8 @@ public:
     Font(const std::string& font_file_name);
     ~Font();
 
-    Glyph get_glyph();
+    Uint16 get_glyph_count();
+    Glyph get_glyph(Uint16 glyph_index);
 
 private:
 
@@ -61,6 +62,9 @@ private:
 
     std::vector<Uint8> font_file_contents;
     std::map<std::string, Uint32> table_name_to_offset;
+
+    Uint16 glyph_count;
+    Uint32* glyph_offsets;
 
     void initialize(const std::string& font_file_name);
     Uint32 read_uint32_from_big_endian_file(const std::vector<Uint8> file_contents, int location);

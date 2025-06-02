@@ -58,6 +58,9 @@ void calculate_glyph_render_bounds(const Glyph& glyph, int window_width, int win
 // --------------------------------------------------------------------------
 
 void draw_glyph_points(SDL_Renderer* renderer, const Glyph& glyph, int window_width, int window_height, int padding) {
+    Uint8 draw_r, draw_g, draw_b, draw_a;
+    SDL_GetRenderDrawColor(renderer, &draw_r, &draw_g, &draw_b, &draw_a);
+
     SDL_FRect glyph_render_bounds;
     calculate_glyph_render_bounds(glyph, window_width, window_height, padding, glyph_render_bounds);
 
@@ -77,8 +80,21 @@ void draw_glyph_points(SDL_Renderer* renderer, const Glyph& glyph, int window_wi
             glyph_render_bounds.y + glyph_render_bounds.h - 1
         );
 
-        SDL_RenderPoint(renderer, mapped_x, mapped_y);
+        if (!glyph.points[i].is_on_curve) {
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        } else {
+            SDL_SetRenderDrawColor(renderer, draw_r, draw_g, draw_b, draw_a);
+        }
+
+        SDL_FRect point_rect;
+        point_rect.x = mapped_x - 1;
+        point_rect.y = mapped_y - 1;
+        point_rect.w = 3;
+        point_rect.h = 3;
+        SDL_RenderRect(renderer, &point_rect);
     }
+
+    SDL_SetRenderDrawColor(renderer, draw_r, draw_g, draw_b, draw_a);
 }
 
 // --------------------------------------------------------------------------
@@ -170,6 +186,26 @@ void draw_glyph_contours(SDL_Renderer* renderer, const Glyph& glyph, int window_
 
 // --------------------------------------------------------------------------
 
+void print_glyph_information(const Glyph& glyph, Uint16 glyph_index) {
+    std::cout << std::endl;
+    std::cout << "Glyph " << glyph_index << " data:" << std::endl;
+    std::cout << "Bounds: (" << glyph.min_extents.x << ", " << glyph.min_extents.y << ") => (";
+    std::cout << glyph.max_extents.x << ", " << glyph.max_extents.y << ")" << std::endl;
+
+    std::cout << "End point indices: [";
+    for (int i = 0; i < glyph.num_end_point_indices; i++) {
+        std::cout << glyph.end_point_indices[i] << ((i == glyph.num_end_point_indices - 1) ? "]" : ", ");
+    }
+    std::cout << std::endl;
+
+    for (int i = 0; i < glyph.num_points; i++) {
+        std::cout << "Point " << i << " is " << (glyph.points[i].is_on_curve ? "ON curve : " : "OFF curve: ");
+        std::cout << "(" << glyph.points[i].x << ", " << glyph.points[i].y << ")" << std::endl;
+    }
+}
+
+// --------------------------------------------------------------------------
+
 int main(int argc, char** argv) {
 
     if (argc != 2) {
@@ -179,23 +215,6 @@ int main(int argc, char** argv) {
 
     std::string font_file_name = argv[1];
     Font font(font_file_name);
-
-    Glyph glyph_0 = font.get_glyph();
-    std::cout << std::endl;
-    std::cout << "Glyph 0 data:" << std::endl;
-    std::cout << "Bounds: (" << glyph_0.min_extents.x << ", " << glyph_0.min_extents.y << ") => (";
-    std::cout << glyph_0.max_extents.x << ", " << glyph_0.max_extents.y << ")" << std::endl;
-
-    std::cout << "End point indices: [";
-    for (int i = 0; i < glyph_0.num_end_point_indices; i++) {
-        std::cout << glyph_0.end_point_indices[i] << ((i == glyph_0.num_end_point_indices - 1) ? "]" : ", ");
-    }
-    std::cout << std::endl;
-
-    for (int i = 0; i < glyph_0.num_points; i++) {
-        std::cout << "Point " << i << " is " << (glyph_0.points[i].is_on_curve ? "ON curve : " : "OFF curve: ");
-        std::cout << "(" << glyph_0.points[i].x << ", " << glyph_0.points[i].y << ")" << std::endl;
-    }
 
     // --- setup ---
 
@@ -222,9 +241,16 @@ int main(int argc, char** argv) {
 
     SDL_SetRenderVSync(renderer, 1);
 
+    // --- main loop ---
+
     DrawMethod draw_method = DrawMethod::POINTS;
 
-    // --- main loop ---
+    bool previous_was_left_arrow_pressed = false;
+    bool previous_was_right_arrow_pressed = false;
+
+    Uint16 current_glyph_index = 0;
+    Glyph current_glyph = font.get_glyph(current_glyph_index);
+    print_glyph_information(current_glyph, current_glyph_index);
 
     bool is_running = true;
     while (is_running) {
@@ -248,17 +274,47 @@ int main(int argc, char** argv) {
             }
         }
 
+        Uint16 next_glyph_index = current_glyph_index;
+
+        const bool* keyboard = SDL_GetKeyboardState(nullptr);
+        bool current_was_left_arrow_pressed = keyboard[SDL_SCANCODE_LEFT];
+        bool current_was_right_arrow_pressed = keyboard[SDL_SCANCODE_RIGHT];
+        if (!previous_was_left_arrow_pressed && current_was_left_arrow_pressed) {
+            if (next_glyph_index == 0) {
+                next_glyph_index = font.get_glyph_count() - 1;
+            } else {
+                next_glyph_index--;
+            }
+        } else if (!previous_was_right_arrow_pressed && current_was_right_arrow_pressed) {
+            next_glyph_index++;
+            if (next_glyph_index >= font.get_glyph_count()) {
+                next_glyph_index = 0;
+            }
+        }
+
+        if (next_glyph_index != current_glyph_index) {
+            current_glyph_index = next_glyph_index;
+
+            current_glyph.destroy();
+            current_glyph = font.get_glyph(current_glyph_index);
+
+            print_glyph_information(current_glyph, current_glyph_index);
+        }
+
+        previous_was_left_arrow_pressed = current_was_left_arrow_pressed;
+        previous_was_right_arrow_pressed = current_was_right_arrow_pressed;
+
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
         if (draw_method == DrawMethod::POINTS) {
-            draw_glyph_points(renderer, glyph_0, window_width, window_height, 20);
+            draw_glyph_points(renderer, current_glyph, window_width, window_height, 20);
         } else if (draw_method == DrawMethod::LINES) {
-            draw_glyph_lines(renderer, glyph_0, window_width, window_height, 20);
+            draw_glyph_lines(renderer, current_glyph, window_width, window_height, 20);
         } else if (draw_method == DrawMethod::CONTOURS) {
-            draw_glyph_contours(renderer, glyph_0, window_width, window_height, 20);
+            draw_glyph_contours(renderer, current_glyph, window_width, window_height, 20);
         }
 
         SDL_RenderPresent(renderer);
@@ -266,7 +322,7 @@ int main(int argc, char** argv) {
 
     // --- cleanup ---
 
-    glyph_0.destroy();
+    current_glyph.destroy();
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
